@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/selfstat"
 )
 
 type RunningInput struct {
@@ -12,8 +13,20 @@ type RunningInput struct {
 	Config *InputConfig
 
 	trace       bool
-	debug       bool
 	defaultTags map[string]string
+
+	MetricsGathered selfstat.Stat
+}
+
+func NewRunningInput(
+	input telegraf.Input,
+	config *InputConfig,
+) *RunningInput {
+	return &RunningInput{
+		Input:           input,
+		Config:          config,
+		MetricsGathered: selfstat.Register("self_inputs", "metrics_gathered", map[string]string{"input": config.Name}),
+	}
 }
 
 // InputConfig containing a name, interval, and filter
@@ -51,7 +64,6 @@ func (r *RunningInput) MakeMetric(
 		r.defaultTags,
 		r.Config.Filter,
 		true,
-		r.debug,
 		mType,
 		t,
 	)
@@ -60,15 +72,8 @@ func (r *RunningInput) MakeMetric(
 		fmt.Println("> " + m.String())
 	}
 
+	r.MetricsGathered.Incr(1)
 	return m
-}
-
-func (r *RunningInput) Debug() bool {
-	return r.debug
-}
-
-func (r *RunningInput) SetDebug(debug bool) {
-	r.debug = debug
 }
 
 func (r *RunningInput) Trace() bool {

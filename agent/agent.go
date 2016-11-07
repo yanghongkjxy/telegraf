@@ -44,8 +44,6 @@ func NewAgent(config *config.Config) (*Agent, error) {
 // Connect connects to all configured outputs
 func (a *Agent) Connect() error {
 	for _, o := range a.Config.Outputs {
-		o.Quiet = a.Config.Agent.Quiet
-
 		switch ot := o.Output.(type) {
 		case telegraf.ServiceOutput:
 			if err := ot.Start(); err != nil {
@@ -106,22 +104,21 @@ func (a *Agent) gatherer(
 ) {
 	defer panicRecover(input)
 
+	acc := NewAccumulator(input, metricC)
+	acc.SetPrecision(a.Config.Agent.Precision.Duration,
+		a.Config.Agent.Interval.Duration)
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
-		acc := NewAccumulator(input, metricC)
-		acc.SetPrecision(a.Config.Agent.Precision.Duration,
-			a.Config.Agent.Interval.Duration)
-		input.SetDebug(a.Config.Agent.Debug)
-		input.SetDefaultTags(a.Config.Tags)
-
 		internal.RandomSleep(a.Config.Agent.CollectionJitter.Duration, shutdown)
 
 		start := time.Now()
 		gatherWithTimeout(shutdown, input, acc, interval)
 		elapsed := time.Since(start)
 
+		// TODO write a "self" metric for the time it took to gather this input
 		log.Printf("D! Input [%s] gathered metrics, (%s interval) in %s\n",
 			input.Name(), interval, elapsed)
 
@@ -203,9 +200,6 @@ func (a *Agent) Test() error {
 
 		if err := input.Input.Gather(acc); err != nil {
 			return err
-		}
-		if acc.errCount > 0 {
-			return fmt.Errorf("Errors encountered during processing")
 		}
 
 		// Special instructions for some inputs. cpu, for example, needs to be
@@ -323,17 +317,17 @@ func (a *Agent) Run(shutdown chan struct{}) error {
 		a.Config.Agent.Hostname, a.Config.Agent.FlushInterval.Duration)
 
 	// channel shared between all input threads for accumulating metrics
-	metricC := make(chan telegraf.Metric, 100)
+	metricC := make(chan telegraf.Metric, 1000)
 
 	// Start all ServicePlugins
 	for _, input := range a.Config.Inputs {
+		input.SetDefaultTags(a.Config.Tags)
 		switch p := input.Input.(type) {
 		case telegraf.ServiceInput:
 			acc := NewAccumulator(input, metricC)
 			// Service input plugins should set their own precision of their
 			// metrics.
 			acc.SetPrecision(time.Nanosecond, 0)
-			input.SetDefaultTags(a.Config.Tags)
 			if err := p.Start(acc); err != nil {
 				log.Printf("E! Service for input %s failed to start, exiting\n%s\n",
 					input.Name(), err.Error())

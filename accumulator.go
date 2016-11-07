@@ -1,6 +1,8 @@
 package telegraf
 
-import "time"
+import (
+	"time"
+)
 
 // Accumulator is an interface for "accumulating" metrics from plugin(s).
 // The metrics are sent down a channel shared between all plugins.
